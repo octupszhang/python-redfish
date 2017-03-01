@@ -125,6 +125,7 @@ from future import standard_library
 standard_library.install_aliases()
 from builtins import object
 
+import base64
 import json
 from urllib.parse import urlparse, urljoin, urlunparse
 import requests
@@ -142,7 +143,8 @@ def connect(
         password,
         simulator=False,
         enforceSSL=True,
-        verify_cert=True):
+        verify_cert=True,
+        session_support=True):
 
     return RedfishConnection(
         url,
@@ -150,7 +152,8 @@ def connect(
         password,
         simulator=simulator,
         enforceSSL=enforceSSL,
-        verify_cert=verify_cert
+        verify_cert=verify_cert,
+        session_support=session_support
     )
 
 
@@ -163,7 +166,8 @@ class RedfishConnection(object):
                  password,
                  simulator=False,
                  enforceSSL=True,
-                 verify_cert=True
+                 verify_cert=True,
+                 session_support=True
                  ):
         """Initialize a connection to a Redfish service."""
         # Specify a name for the logger as recommended by the logging
@@ -183,6 +187,7 @@ class RedfishConnection(object):
         self.connection_parameters.password = password
         self.connection_parameters.enforceSSL = enforceSSL
         self.connection_parameters.verify_cert = verify_cert
+        self.connection_parameters.session_supported = session_support
 
         # Use DMTF mockup or not
         self.__simulator = simulator
@@ -197,6 +202,8 @@ class RedfishConnection(object):
         if self.connection_parameters.enforceSSL is True:
             config.logger.debug("Enforcing SSL")
             rooturl = rooturl._replace(scheme="https")
+            if isinstance(self.connection_parameters.rooturl, str):
+                rooturl=rooturl.decode()
             self.connection_parameters.rooturl = rooturl.geturl()
 
         # Verify cert
@@ -220,7 +227,8 @@ class RedfishConnection(object):
             self.get_api_version(), self.Root.get_name())
 
         # Now we need to login otherwise we are not allowed to extract data
-        if self.__simulator is False:
+        if self.__simulator is False and \
+            self.connection_parameters.session_supported is True:
             try:
                 config.logger.info("Login to %s", rooturl.netloc)
                 self.login()
@@ -237,10 +245,11 @@ class RedfishConnection(object):
         # ===================================================================
 
         # Types
-        self.SessionService = types.SessionService(
-            self.Root.get_link_url(
-                mapping.redfish_mapper.map_sessionservice()),
-            self.connection_parameters)
+        if self.connection_parameters.session_supported:
+            self.SessionService = types.SessionService(
+                self.Root.get_link_url(
+                    mapping.redfish_mapper.map_sessionservice()),
+                self.connection_parameters)
 
         self.Managers = types.ManagersCollection(
             self.Root.get_link_url("Managers"),
@@ -272,6 +281,11 @@ class RedfishConnection(object):
 
         """
         return (self.Root.get_api_version())
+
+    def refresh_systems(self):
+        self.Systems = types.SystemsCollection(
+            self.Root.get_link_url("Systems"),
+            self.connection_parameters)
 
     def login(self):
         # Craft full url
@@ -417,4 +431,10 @@ class ConnectionParameters(object):
                    'User-Agent': 'python-redfish'}
         if self.auth_token:
             headers.update({'x-auth-token': self.auth_token})
+        elif self.session_supported is False:
+            authorization = self.user_name + ':' + \
+                            self.password
+            headers.update({'Authorization': 'Basic ' +
+                            base64.b64encode(authorization)})
         return headers
+

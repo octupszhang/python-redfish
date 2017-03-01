@@ -64,7 +64,6 @@ class Base(object):
         :returns:  string -- parameter value
         '''
         self.links = []
-
         # Manage standard < 1.0
         if float(mapping.redfish_version) < 1.00:
             links = getattr(self.data, mapping.redfish_mapper.map_links())
@@ -467,7 +466,7 @@ class Systems(Device):
             # This means we don't have Processors detailed data
             self.simple_storage_collection = None
 
-    def reset_system(self):
+    def reset_system(self, reset_action):
         '''Force reset of the system.
 
         :returns:  string -- http response of POST request
@@ -475,16 +474,17 @@ class Systems(Device):
         '''
         # Craft the request
         action = dict()
-        action['Action'] = 'Reset'
-        action['ResetType'] = 'ForceRestart'
-
+        action['ResetType'] = reset_action
+        reset_url=self.data['Actions'][u'#ComputerSystem.Reset']['target']
+        url=urljoin(self.api_url.url(), reset_url)
         # Debug the url and perform the POST action
         # print self.api_url
-        response = self.api_url.post(
+        import json
+        response = requests.post(
+            url,
             verify=self.connection_parameters.verify_cert,
             headers=self.connection_parameters.headers,
-            data=action)
-        # TODO : treat response.
+            data=json.dumps(action))
         return response
 
     def get_bios_version(self):
@@ -640,7 +640,6 @@ class Systems(Device):
 
         :param value: json structure with value to update
         :returns:   string -- http response of PATCH request
-
         '''
         # perform the POST action
         # print self.api_url.url()
@@ -674,7 +673,7 @@ class Systems(Device):
         '''
         return self.set_parameter_json(
             '{"Boot": {"BootSourceOverrideTarget": "' +
-            target + '"},{"BootSourceOverrideEnabled" : "' + enabled + '"}}')
+            target + '","BootSourceOverrideEnabled" : "' + enabled + '"}}')
 
 
 class SystemsCollection(BaseCollection):
